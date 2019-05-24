@@ -4,7 +4,7 @@ const WebSocket = require('ws')
 const wss = new WebSocket.Server({ port: 8080 })
 
 const readF32ArrBufferAsInt16Arr=(bufferReceived)=>{
-  const buffer=new Buffer(bufferReceived)
+  const buffer=new Buffer.from(bufferReceived)
   const result = new Int16Array(buffer.length / 4);
   for (var i = 0, p = 0; i < buffer.length; i += 4, ++p){
     result[p] = 32767 * Math.min(1, buffer.readFloatLE(i))
@@ -13,42 +13,65 @@ const readF32ArrBufferAsInt16Arr=(bufferReceived)=>{
 }
 
 // Creates a client
-// const client = new speech.SpeechClient();
+ const client = new speech.SpeechClient();
 
 // /**
 //  * TODO(developer): Uncomment the following lines before running the sample.
 //  */
-// const encoding = 'Encoding of the audio file, e.g. LINEAR16';
-// const sampleRateHertz = 16000;
-// const languageCode = 'BCP-47 language code, e.g. en-US';
-// const request = {
-//   config: {
-//     encoding: encoding,
-//     sampleRateHertz: sampleRateHertz,
-//     languageCode: languageCode,
-//   },
-//   interimResults: false, // If you want interim results, set this to true
-// };
+const encoding = 'LINEAR16';
+const sampleRateHertz = 48000;
+const languageCode = 'en-US';
+const request = {
+  config: {
+    encoding: encoding,
+    sampleRateHertz: sampleRateHertz,
+    languageCode: languageCode,
+  },
+  single_utterance: true
+};
+const speechCallback=data =>{
+  console.log({data})
+  if (data.results && data.results[0]) {
+    websocket.send('Serve:',JSON.stringify(data.results[0]));
+  }
 
-// // Create a recognize stream
-// const recognizeStream = client
-//   .streamingRecognize(request)
-//   .on('error', console.error)
-//   .on('data', data =>
-//     process.stdout.write(
-//       data.results[0] && data.results[0].alternatives[0]
-//         ? `Transcription: ${data.results[0].alternatives[0].transcript}\n`
-//         : `\n\nReached transcription time limit, press Ctrl+C\n`
-//     )
-//   );
+  return process.stdout.write(
+    data.results[0] && data.results[0].alternatives[0]
+      ? `Transcription: ${data.results[0].alternatives[0].transcript}\n`
+      : `\n\nReached transcription time limit, press Ctrl+C\n`
+  )
+}
+
 
 wss.on('connection', ws => {
+  
+// Create a recognize stream
+  var recognizeStream=client.streamingRecognize(request)
+
   ws.on('message', message => {
-    const audioInput=readF32ArrBufferAsInt16Arr(message)
-    console.log({message})
-    console.log(recognizeStream(audioInput))
+    //if(message.key==='audioBuffer'){
+      //console.log(message)
+      const audioInput=readF32ArrBufferAsInt16Arr(message)
+      recognizeStream.write(audioInput)
+      console.log(recognizeStream)
+      //console.log(recognizeStream)
+      //console.log('audioIput:',audioInput)
+      //console.log(client.streamingRecognize({audio_content:audioInput.buffer}))
+    //}
+    // if(message.key==='streamingStop'){
+    //   recognizeStream.removeListener('data', speechCallback)
+    //   recognizeStream=null
+    // }
   })
-  ws.send('WebSocket connection confirmed...')
+
+  ws.on('close',(code,reason)=>{
+    console.log('ws:code:',code,'reason:',reason)
+    recognizeStream.removeListener('data', speechCallback)
+    recognizeStream=null
+  })
+  
+  recognizeStream.on('error', console.error).on('data', speechCallback)
+  ws.send('Server:WebSocket connection confirmed...')
 })
 
 
